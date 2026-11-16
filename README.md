@@ -1,14 +1,61 @@
 # Polo-Super Custom LLM Builder
-# Overview
-Polo-Super is a project designed to let users build personalized large language models based on open-source models downloaded from Hugging Face, running everything locally for privacy and speed. The core flow: Grab a pre-trained open-source model from Hugging Face → Deploy it locally → Fine-tune it using your own chat history combined with some public open datasets.
-The main goal is to make the final model imitate my real chatting style as closely as possible — the tone, the way I talk, the habits, the vibe — so when you chat with it, it feels like talking to the actual me, natural, familiar, with personality.
-Everything runs completely locally, no cloud needed, works on consumer hardware.
 
-Polo-Super目的是让用户能够基于 Hugging Face 下载的开源大模型，在本地部署并进行个性化定制。核心流程是：从 Hugging Face 获取预训练开源模型 → 本地运行以保证隐私和速度 → 结合用户的聊天记录以及部分公开开源数据集，对模型进行微调。
-最终得到的大模型，主要目的是尽可能模仿我本人与人聊天的风格、语气、习惯和表达方式，让它在日常对话中听起来像真人一样自然、熟悉、有个性。
-整个过程全部在本地完成，不依赖任何云服务，使用消费级硬件即可运行。
+> **一句话：用你自己的聊天记录，通过 LoRA 低秩微调，把开源大模型训练成"说话像你"的 AI 分身，并在本地部署后接入微信、企业微信、飞书、钉钉或网页聊天。**
+>
+> *Fine-tune an open-source LLM on your own chat history with LoRA (low-rank adaptation), serve it locally with vLLM/Ollama, and plug it into WeChat & other chat apps.*
 
-# Demo
+## 🧐 这个项目做了什么？（给非技术读者）
+
+想象一下：你有一个"数字分身"，朋友在微信里和它聊天，它的语气、口头禅、表达习惯都和你本人很像。这个项目就是做这件事的完整流水线：
+
+| 步骤 | 通俗解释 | 用到的技术 |
+| --- | --- | --- |
+| 1. 准备素材 | 把你的聊天记录整理成"别人问 → 你答"的样本，自动脱敏 | `finetune/prepare_data.py` |
+| 2. 教模型学说话 | 不改动大模型本体，只额外训练一个很小的"风格插件"（十几 MB） | **LoRA / QLoRA 低秩微调**（`finetune/train_lora.py`）、FedSA-LoRA 联邦微调 |
+| 3. 在自己电脑上运行 | 模型和数据都在本地，不上传云端，保护隐私 | **vLLM / Ollama** |
+| 4. 接到聊天软件 | 让分身出现在微信、企业微信、公众号、飞书、钉钉或网页里 | 多渠道机器人框架 + 插件系统 |
+| 5. 边聊边学 | 按联系人记住聊天方式，对不同的人说不同的话；说错了可以纠正，记录可用于再训练 | `StyleLearner` 插件 |
+
+**为什么用 LoRA（低秩/分秩）？** 大模型有几十亿参数，全部重新训练需要昂贵的服务器。LoRA 把"需要改变的部分"拆成两个很小的矩阵（A、B），只训练约 0.1%–1% 的参数，一张消费级显卡就能完成。
+
+## 🏗️ 架构总览
+
+```mermaid
+flowchart LR
+    D["📱 你的聊天记录<br/>+ 公开数据集"] --> T["🧠 LoRA / QLoRA 微调<br/>(FedSA-LoRA 可选)"]
+    M["🤗 HuggingFace 开源模型<br/>DeepSeek / Qwen / Llama"] --> T
+    T --> A[("🎭 你的风格适配器<br/>polo-super-lora")]
+    M --> S["🖥️ 本地推理服务<br/>vLLM / Ollama<br/>OpenAI 兼容 API"]
+    A --> S
+    S <--> B["🤖 聊天机器人框架<br/>bridge · bot · plugins"]
+    B -->|"按联系人记录 / $纠正"| L[("📝 StyleLearner<br/>对话记录")]
+    L -.->|"定期再训练"| T
+    B <--> C["💬 微信 · 企业微信 · 公众号<br/>飞书 · 钉钉 · 网页 · 终端"]
+    C <--> U(("👥 朋友 / 用户"))
+```
+
+更详细的消息时序图、训练流程图、FedSA-LoRA 联邦图和目录说明见 👉 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+
+## 📊 训练效果（真实实验）
+
+在一台 **16GB 内存的 MacBook（Apple M4）** 上，用 LoRA 微调 Qwen2.5-0.5B-Instruct，只训练 **0.88%** 的参数，耗时 **17 分钟**：
+
+<p align="center"><img src="docs/results/loss_curve.png" width="640" alt="loss curve"></p>
+
+| 指标（200 条留出对话） | 微调前 | 微调后 | 真人回复 |
+| --- | --- | --- | --- |
+| 困惑度 ↓ | 602.1 | **141.7（−76.5%）** | — |
+| 平均回复长度 | 25.6 字 | **7.5 字** | 9.3 字 |
+
+| 对方说 | 微调前（AI 客服腔） | 微调后（真人聊天腔） |
+| --- | --- | --- |
+| 生日快乐爱你 | 生日快乐！爱你永远。 | 谢谢啦 |
+| 心疼夫人 | 哎呀，听到你这么说，我也很为你担心。有什么我可以帮忙的吗？ | 你这是在安慰我啊 |
+| 除了远之外，挺美的，有机会去玩啊~ | 那太好了！咱们可以一起计划一下，找个时间一起去玩儿吧！ | 嗯嗯 |
+
+> 本次实验使用公开中文闲聊语料 LCCC 验证流程，不是个人微信记录；换成自己的微信导出数据即可训练你自己的风格。完整配置、逐步日志、未挑选的样例与局限分析见 👉 **[docs/TRAINING_REPORT.md](docs/TRAINING_REPORT.md)**
+
+## 🎬 演示 Demo
 
 🎬 **Watch Super Polo in Action**
 
@@ -36,189 +83,90 @@ Polo-Super目的是让用户能够基于 Hugging Face 下载的开源大模型�
 - ✅ DeepSeek AI integration
 - ✅ Plugin system for extended capabilities
 
-# Detailed Guide
-## Fine-Tuning DeepSeek Models with Unsloth + QLoRA, Distillation, and Ollama Deployment
+## 🚀 快速开始
 
-This is a comprehensive, beginner-friendly pipeline for fine-tuning DeepSeek models using **Unsloth + 4bit/8bit QLoRA**, optional distillation, and deployment via **Ollama** with dynamic LoRA loading.  
-All custom models/folders/outputs will use the prefix **`polo-super`**.
+### 1. 启动本地模型（vLLM 示例）
 
-**Assumptions**  
-- Hardware: 1–2 NVIDIA GPUs (e.g., RTX 4090/5090, ≥24GB VRAM total)  
-- CUDA 12.4+ installed (verify with `nvidia-smi`)  
-- Basic Python knowledge  
-- Goal: Fine-tune a small DeepSeek distilled model (1.5B–8B), save LoRA, deploy locally  
-- Total first-run time: **1–4 hours** (mostly downloading & training); later iterations much faster
-
-## 1. Environment Setup (10–30 minutes)
-
-**Purpose**: Install Unsloth and dependencies for accelerated QLoRA fine-tuning.
-
-1. Create virtual environment (recommended)  
-   ```bash
-   python -m venv polo-super-env
-   # Activate:
-   # Linux/Mac:   source polo-super-env/bin/activate
-   # Windows:     polo-super-env\Scripts\activate
-   ```
-
-## Install packages
-
-### PyTorch with CUDA (adjust for your CUDA version if needed)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-
-### Unsloth + ecosystem
-pip install "unsloth[cu124-torch240]" --no-deps
-pip install --no-deps xformers "trl<0.9.0" peft accelerate bitsandbytes datasets
-
-### qucik veryification
 ```bash
-import torch
-print(torch.cuda.is_available())          # Should be True
-print(torch.cuda.device_count())          # Should show your GPU count
+pip install vllm
+vllm serve Qwen/Qwen1.5-0.5B-Chat --port 8000
+# 挂载自己训练的 LoRA：
+# vllm serve <基座模型> --port 8000 --enable-lora --lora-modules polo-super=./polo-super-lora
 ```
 
-### Select & Load Base Model (5–20 minutes)
-Purpose: Load a quantized DeepSeek variant to save VRAM.
-Recommended starting models (from Hugging Face):
+> Mac / 无 NVIDIA 显卡可用 [Ollama](https://ollama.com)：`ollama run qwen2.5`，API 地址改为 `http://localhost:11434/v1`。
 
-+ unsloth/DeepSeek-R1-Distill-Qwen-1.5B-bnb-4bit ← fastest & lowest VRAM
-+ unsloth/DeepSeek-R1-Distill-Llama-8B-bnb-4bit ← stronger
-+ deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct ← code specialized
+### 2. 配置并启动聊天机器人
 
-Code snippet (add to polo-super-finetune.py):
 ```bash
-from unsloth import FastLanguageModel
-import torch
-
-max_seq_length = 8192
-dtype = None
-load_in_4bit = True   # Set False → use 8bit if you have more VRAM
-
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-bnb-4bit",
-    max_seq_length = max_seq_length,
-    dtype = dtype,
-    load_in_4bit = load_in_4bit,
-)
+pip install -r requirements.txt
+cp config-template.json config.json
 ```
 
-### Prepare Dataset (20–60 minutes)
-Purpose: High-quality data is 70–80% of success.
-Format recommendation (Alpaca / ShareGPT style – especially good for reasoning):
-```bash
+修改 `config.json` 中的关键字段：
+
+```json
 {
-  "messages": [
-    {"role": "user", "content": "Solve: 15 × 23?"},
-    {"role": "assistant", "content": "<think>Break it down: 15×20=300, 15×3=45, total 345.</think>\nFinal answer: 345"}
-  ]
+  "channel_type": "web",
+  "bot_type": "chatGPT",
+  "model": "Qwen/Qwen1.5-0.5B-Chat",
+  "open_ai_api_base": "http://localhost:8000/v1",
+  "open_ai_api_key": "EMPTY",
+  "character_desc": "你是 Polo，说话轻松幽默，喜欢聊技术。"
 }
 ```
-Steps:
-
-Collect 1k–10k+ samples (HuggingFace Datasets, self-generated, synthetic via API, etc.)
-Clean: remove noise, duplicates, wrong labels
-Save as JSONL or use HF dataset
-
-Load in code:
-```bash
-from datasets import load_dataset
-
-dataset = load_dataset("json", data_files="polo-super-data.jsonl", split="train")
-# Or: dataset = load_dataset("your_username/polo-super-dataset", split="train")
-```
-
-4. LoRA Fine-Tuning (30–120 minutes)
-Purpose: Train small LoRA adapter only.
 
 ```bash
-# 4.1 Apply LoRA
-model = FastLanguageModel.get_peft_model(
-    model,
-    r = 64,                     # 16–128; higher = stronger but more VRAM
-    target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                      "gate_proj", "up_proj", "down_proj"],
-    lora_alpha = 32,
-    lora_dropout = 0,
-    bias = "none",
-    use_gradient_checkpointing = "unsloth",  # Very important for VRAM
-    random_state = 3407,
-)
-
-# 4.2 Trainer
-from trl import SFTTrainer
-from transformers import TrainingArguments
-
-trainer = SFTTrainer(
-    model = model,
-    tokenizer = tokenizer,
-    train_dataset = dataset,
-    dataset_text_field = "text",           # or "messages" if using chat template
-    max_seq_length = max_seq_length,
-    dataset_num_proc = 2,
-    packing = True,                        # Packs for speed
-    args = TrainingArguments(
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4,
-        warmup_steps = 5,
-        max_steps = 120,                   # or num_train_epochs = 3
-        learning_rate = 2e-4,              # Most important to tune
-        fp16 = not torch.cuda.is_bf16_supported(),
-        bf16 = torch.cuda.is_bf16_supported(),
-        logging_steps = 1,
-        optim = "adamw_8bit",
-        weight_decay = 0.01,
-        lr_scheduler_type = "linear",
-        seed = 3407,
-        output_dir = "polo-super-outputs",
-    ),
-)
-
-# 4.3 Start training
-trainer.train()
+python3 app.py
+# 打开 http://localhost:9899/chat 开始聊天
 ```
 
-Iteration tips:
+`channel_type` 可选：`web`（网页）、`terminal`（命令行）、`wx`（个人微信，有封号风险）、`wechatmp`/`wechatmp_service`（公众号）、`wechatcom_app`（企业微信应用）、`feishu`、`dingtalk`。全部配置项见 [`config.py`](config.py)。
 
-Improve/clean data first (biggest gain)
-Then tune: learning_rate, max_steps/epochs, r
-Rarely: change target_modules or lora_alpha
+### 3. 训练你自己的风格模型
 
-## Save & Merge (5–10 minutes)
 ```bash
-# Save small LoRA adapter (recommended – very portable)
-model.save_pretrained("polo-super-lora")
-
-# Optional: Merge into full model (faster inference, bigger file)
-model.save_pretrained_merged(
-    "polo-super-merged",
-    tokenizer,
-    save_method = "merged_16bit"   # or "merged_4bit" for smaller size
-)
+pip install -r finetune/requirements.txt
+# ① 微信导出的 CSV（WeChatMsg / 留痕等）→ 脱敏后的多轮对话 JSONL
+python finetune/prepare_data.py wechat --input 微信导出.csv --out finetune/data/train.jsonl
+# ② LoRA 训练（自动选择 CUDA / Apple MPS / CPU）
+python finetune/train_lora.py --train finetune/data/train.jsonl --eval finetune/data/eval.jsonl --out outputs/polo-style-lora
+# ③ 评测：生成 loss 曲线、指标和前后对比
+python finetune/evaluate.py --adapter outputs/polo-style-lora --eval finetune/data/eval.jsonl --report-dir docs/results
 ```
 
-## Deploy with Ollama + Dynamic LoRA Loading (10–30 minutes)
-Purpose: Run your fine-tuned LoRA on top of base model locally.
+Unsloth + 4bit QLoRA 训练更大模型（DeepSeek 1.5B–8B）的教程见 👉 [docs/FINETUNE_GUIDE.md](docs/FINETUNE_GUIDE.md)；联邦低秩微调见 [`fedSA-LoRA/`](fedSA-LoRA) 与 [架构文档](docs/ARCHITECTURE.md#4-fedsa-lora-联邦低秩微调)。
 
-Install Ollama → https://ollama.com/download
-Verify: ollama --version
-(Optional but recommended) Convert LoRA to GGUF
-Use llama.cpp tools:
-"python convert_lora_to_gguf.py --outfile polo-super-lora.gguf polo-super-lora/"
-Create Modelfile (text file, no extension)
+### 4. 边聊边学（StyleLearner 插件，默认开启）
+
+机器人会**按联系人**记录对话，对不同的人自动套用你们以往的说话方式；觉得它说得不像你时，发 `$纠正 你会怎么回` 就能纠正。积累的记录可以导出，用来再训练 LoRA：
+
 ```bash
-FROM llama3.1:8b                  # Must match your training base exactly!
-ADAPTER ./polo-super-lora.gguf    # or path to Safetensors folder
-
-TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id>
-
-{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id>
-
-{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id>
-
-{{ .Response }}<|eot_id|>"""
-
-SYSTEM "You are Polo-Super, a helpful and precise assistant."
-PARAMETER temperature 0.7
+python finetune/prepare_data.py stylelog --input plugins/style_learner/data --out finetune/data/online.jsonl
 ```
-Create & RunBashollama create polo-super-model -f Modelfile
-```ollama run polo-super-model```
+
+详见 [plugins/style_learner/README.md](plugins/style_learner/README.md)。
+
+## 📚 文档导航
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构图、消息流程、训练流程、FedSA-LoRA、目录结构 |
+| [docs/TECHNICAL_ANALYSIS.md](docs/TECHNICAL_ANALYSIS.md) | LoRA/QLoRA/FedSA-LoRA 原理、vLLM vs Ollama、应用层设计、**项目不足与优化路线图** |
+| [docs/TRAINING_REPORT.md](docs/TRAINING_REPORT.md) | **真实训练报告**：数据、配置、loss 曲线、前后对比、局限 |
+| [docs/FINETUNE_GUIDE.md](docs/FINETUNE_GUIDE.md) | 手把手微调与部署教程（Unsloth / Ollama / vLLM） |
+| [plugins/style_learner/README.md](plugins/style_learner/README.md) | 边聊边学插件 |
+
+## ⚠️ 注意事项
+
+- **隐私**：聊天记录包含他人信息，训练前请脱敏（手机号、姓名、地址等），并征得相关人同意。
+- **基座一致**：部署时加载 LoRA 的基座模型和对话模板必须与训练时完全一致。
+- **个人微信**：`wx` 渠道基于非官方协议，可能导致封号，建议优先使用网页、企业微信或公众号。
+
+## 🙏 致谢
+
+- 聊天机器人框架基于 [zhayujie/chatgpt-on-wechat](https://github.com/zhayujie/chatgpt-on-wechat)（MIT License）
+- 联邦学习框架基于 [alibaba/FederatedScope](https://github.com/alibaba/FederatedScope)（Apache-2.0 License）
+- FedSA-LoRA：*Selective Aggregation for Low-Rank Adaptation in Federated Learning*（ICLR 2025）
+- 实验语料：[LCCC](https://github.com/thu-coai/CDial-GPT)（清华 CoAI，MIT License）
+- 微调工具：[Unsloth](https://github.com/unslothai/unsloth)、[PEFT](https://github.com/huggingface/peft)、[TRL](https://github.com/huggingface/trl)；推理：[vLLM](https://github.com/vllm-project/vllm)、[Ollama](https://ollama.com)

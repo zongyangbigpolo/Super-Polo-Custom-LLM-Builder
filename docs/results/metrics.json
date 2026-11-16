@@ -1,0 +1,34 @@
+{
+  "base": {
+    "eval_loss": 6.4005,
+    "perplexity": 602.14,
+    "avg_reply_chars": 25.6,
+    "distinct_1": 0.288,
+    "distinct_2": 0.73,
+    "char_f1_vs_reference": 0.08
+  },
+  "lora": {
+    "eval_loss": 4.954,
+    "perplexity": 141.74,
+    "avg_reply_chars": 7.5,
+    "distinct_1": 0.318,
+    "distinct_2": 0.625,
+    "char_f1_vs_reference": 0.1
+  },
+  "reference": {
+    "avg_reply_chars": 9.3,
+    "distinct_1": 0.46,
+    "distinct_2": 0.894
+  },
+  "meta": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "eval_samples": 200,
+    "generation_samples": 60,
+    "train_samples": 2000,
+    "trainable_params": 4399104,
+    "total_params": 498431872,
+    "train_time_s": 1024.6,
+    "device": "mps",
+    "decoding": "greedy, repetition_penalty=1.1"
+  }
+}
