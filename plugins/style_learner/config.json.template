@@ -1,0 +1,8 @@
+{
+  "record": true,
+  "inject_examples": true,
+  "max_examples": 5,
+  "refresh_every": 5,
+  "owner_nicknames": [],
+  "record_groups": false
+}

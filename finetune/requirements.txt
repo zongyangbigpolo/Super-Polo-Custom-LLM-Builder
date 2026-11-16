@@ -1,0 +1,7 @@
+# Fine-tuning / evaluation dependencies (CUDA, Apple MPS or CPU)
+# Versions below are the ones used for the run in docs/TRAINING_REPORT.md
+torch>=2.4
+transformers>=4.45
+peft>=0.13
+accelerate
+matplotlib

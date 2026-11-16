@@ -246,3 +246,9 @@ plugins/*/config.json
 *.bak
 *.backup
 *~
+# style_learner: private per-contact chat records and local config
+plugins/style_learner/data/
+plugins/style_learner/config.json
+# fine-tuning artifacts
+outputs/
+finetune/data/

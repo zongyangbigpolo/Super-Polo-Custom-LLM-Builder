@@ -1,6 +1,6 @@
 # 技术分析 (Technical Analysis)
 
-> 返回 [README](../README.md)｜架构图见 [ARCHITECTURE.md](ARCHITECTURE.md)｜操作步骤见 [FINETUNE_GUIDE.md](FINETUNE_GUIDE.md)
+> 返回 [README](../README.md)｜架构图见 [ARCHITECTURE.md](ARCHITECTURE.md)｜操作步骤见 [FINETUNE_GUIDE.md](FINETUNE_GUIDE.md)｜实验结果见 [TRAINING_REPORT.md](TRAINING_REPORT.md)
 
 ## 0. 一句话结论
 
@@ -104,25 +104,26 @@ Unsloth 在此之上做了手写 Triton kernel，官方宣称训练速度约 2×
 | # | 问题 | 影响 | 建议 |
 | --- | --- | --- | --- |
 | 1 | **README 偏"教程拼贴"**，没有一句话说清做了什么、没有架构图 | 普通人看不懂 | ✅ 本次已重写 README + 架构图 + 本文 |
-| 2 | **缺少端到端可运行脚本**：README 里的微调代码是片段，仓库中没有 `polo-super-finetune.py` | 无法复现 | 新增 `finetune/train_qlora.py`、`finetune/requirements.txt` |
-| 3 | **缺少数据处理工具**：没有"微信聊天记录 → JSONL"的转换与脱敏脚本，而这是"模仿我说话"的关键一步 | 最核心环节空缺 | 新增 `finetune/prepare_wechat_data.py`（导出、多轮合并、手机号/姓名脱敏、过滤表情/撤回） |
+| 2 | **缺少端到端可运行脚本**：README 里的微调代码是片段，仓库中没有 `polo-super-finetune.py` | 无法复现 | ✅ 已新增 [`finetune/train_lora.py`](../finetune/train_lora.py)（CUDA / Apple MPS / CPU 通用） |
+| 3 | **缺少数据处理工具**：没有"微信聊天记录 → JSONL"的转换与脱敏脚本，而这是"模仿我说话"的关键一步 | 最核心环节空缺 | ✅ 已新增 [`finetune/prepare_data.py`](../finetune/prepare_data.py)：微信导出 CSV / 在线记录 → JSONL，多轮合并、按联系人切分、手机号/身份证/卡号/邮箱/URL 脱敏、过滤图片/表情/撤回 |
 | 4 | **FedSA-LoRA 与主应用未打通**：联邦训练产出的 `.ckpt` 如何转成 PEFT 适配器给 vLLM 加载没有说明 | 两部分像两个独立项目 | 补一个 `ckpt → adapter_model.safetensors` 导出脚本和使用说明 |
 | 5 | `fedSA-LoRA/` 整个 FederatedScope 被复制进来（含 CV/GNN/攻击等无关模块）| 仓库臃肿、难读 | 改为 git submodule 或 `pip install` 依赖，只保留 `llm/`、`glue/` 和配置 |
-| 6 | **没有效果评估**：微调前后"像不像我"没有量化 | 无法证明价值 | 增加评测集 + 盲测（人工打分）/ 风格相似度（embedding 余弦）/ 困惑度对比，给出前后对话示例 |
+| 6 | **没有效果评估**：微调前后"像不像我"没有量化 | 无法证明价值 | ✅ 已新增 [`finetune/evaluate.py`](../finetune/evaluate.py) 与 [训练报告](TRAINING_REPORT.md)：留出集 loss/困惑度、回复长度、distinct-n、字级 F1、前后对比样例；后续可加人工盲测 |
 | 7 | **Modelfile 示例与基座不一致**：用 DeepSeek-Qwen 训练，却 `FROM llama3.1:8b` + Llama 模板 | 照抄会出错 | 模板必须与训练基座一致（已在 README 中提示） |
 | 8 | **配置示例缺本地模型**：`config-template.json` 默认指向 OpenAI | 新手不知道如何连 vLLM | ✅ README 快速开始已给出本地配置示例 |
 | 9 | 上游致谢与许可不清晰 | 合规风险 | ✅ README 已补充致谢（chatgpt-on-wechat: MIT；FederatedScope: Apache-2.0） |
 | 10 | 无测试 / CI | 改动容易出错 | 加最小冒烟测试（配置加载、channel/bot 工厂、mock LLM 回复） |
 | 11 | 个人微信（itchat）有封号风险 | 用户踩坑 | README 提示优先使用 Web / 企业微信 / 公众号渠道 |
 | 12 | 实验产物（`exp/*.raw.gz`）、截图、视频直接入库 | 仓库体积大 | 用 Git LFS 或 Release 附件 |
+| 13 | **机器人不会随聊天学习**：回复不记录，也无法针对不同联系人调整风格 | "越聊越像"无从谈起 | ✅ 已新增 [`plugins/style_learner`](../plugins/style_learner)：按联系人记录对话、`$纠正` 人工纠错、把该联系人的历史风格示例注入 system prompt；记录可导出再训练 LoRA |
 
 ## 7. 优化路线图（建议）
 
 ```mermaid
 flowchart LR
-    P1["阶段1 可读<br/>README / 架构图 / 技术分析 ✅"] --> P2["阶段2 可复现<br/>数据脚本 + 训练脚本 + 一键部署"]
-    P2 --> P3["阶段3 可验证<br/>评测集 + 前后对比示例"]
-    P3 --> P4["阶段4 打通<br/>FedSA-LoRA 导出 → vLLM 多 LoRA 服务"]
+    P1["阶段1 可读<br/>README / 架构图 / 技术分析 ✅"] --> P2["阶段2 可复现<br/>数据脚本 + 训练脚本 ✅"]
+    P2 --> P3["阶段3 可验证<br/>评测 + 前后对比 ✅<br/>换成真实微信数据 ⏳"]
+    P3 --> P4["阶段4 打通<br/>在线记录 → 定期再训练 ✅<br/>FedSA-LoRA 导出 ⏳"]
     P4 --> P5["阶段5 产品化<br/>Docker Compose: vLLM + bot 一起启动"]
 ```
 

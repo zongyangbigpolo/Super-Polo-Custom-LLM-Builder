@@ -8,6 +8,10 @@
             "enabled": true,
             "priority": 900
         },
+        "StyleLearner": {
+            "enabled": true,
+            "priority": 50
+        },
         "Banwords": {
             "enabled": false,
             "priority": 100
